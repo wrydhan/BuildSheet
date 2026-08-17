@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# secrets & env (NEVER commit these)
+.env
+.env.*
+!.env.example
+supabase/functions/.env
+
+# expo
+.expo/
+apps/*/.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# native builds
+apps/*/ios/
+apps/*/android/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# supabase local
+supabase/.temp/
+supabase/.branches/
+
+# macOS
+.DS_Store
+
+# logs & misc
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+coverage/
