@@ -1,13 +1,15 @@
-import { useState, useSyncExternalStore } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  type ViewToken,
 } from "react-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
@@ -242,6 +244,7 @@ export default function MagazineScreen() {
       title="Your Magazine"
       back
       backTo="/(app)"
+      scroll={false}
       serial={`${posters.length} ${posters.length === 1 ? "page" : "pages"}`}
       headerRight={
         <Pressable onPress={() => setEditMode(!editMode)} hitSlop={8}>
@@ -278,6 +281,59 @@ export default function MagazineScreen() {
   );
 }
 
+function MagazinePage({
+  poster,
+  car,
+}: {
+  poster: PosterWithChildren;
+  car: any;
+}) {
+  const isDemo = poster.id.startsWith("demo");
+  const demoData = isDemo ? DEMO_PAGES_DATA[poster.id] || DEMO_PAGES_DATA["demo-1"] : null;
+
+  if (isDemo && demoData) {
+    if (demoData.iscover) {
+      return (
+        <View style={styles.demoCoverImageContainer}>
+          <Image
+            source={DEMO_SHEET_IMAGE}
+            style={styles.demoCoverImage}
+            contentFit="contain"
+          />
+        </View>
+      );
+    }
+
+    return (
+      <View style={[styles.demoPageContent, { backgroundColor: demoData.bgColor }]}>
+        <View style={styles.demoPageHeader}>
+          <Text style={styles.demoPageBrand}>{demoData.brand}</Text>
+          <Text style={styles.demoPageHeadline}>{demoData.headline}</Text>
+        </View>
+        <View style={styles.demoPageBody}>
+          {demoData.specs.map((spec, i) => (
+            <View key={i} style={styles.demoSpecRow}>
+              <Text style={styles.demoSpecLabel}>{spec.label}</Text>
+              <Text style={styles.demoSpecValue}>{spec.value}</Text>
+            </View>
+          ))}
+        </View>
+        <View style={styles.demoPageFooter}>
+          <Text style={styles.demoPageFooterText}>{demoData.footer}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <PosterView
+      poster={poster}
+      car={car}
+      overallNarration={car.narration}
+    />
+  );
+}
+
 function ReaderModeView({
   posters,
   car,
@@ -289,55 +345,76 @@ function ReaderModeView({
   currentPage: number;
   onPageChange: (page: number) => void;
 }) {
+  const flatListRef = useRef<FlatList<PosterWithChildren>>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const onPageChangeRef = useRef(onPageChange);
+  onPageChangeRef.current = onPageChange;
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const index = viewableItems[0]?.index;
+      if (index != null) {
+        onPageChangeRef.current(index);
+      }
+    },
+  ).current;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+
   const goToPage = (page: number) => {
     if (page < 0 || page >= posters.length) return;
+    flatListRef.current?.scrollToIndex({ index: page, animated: true });
     onPageChange(page);
   };
 
-  const currentPoster = posters[currentPage];
-  const isDemo = currentPoster?.id?.startsWith("demo");
-
-  const demoData = isDemo ? DEMO_PAGES_DATA[currentPoster.id] || DEMO_PAGES_DATA["demo-1"] : null;
+  const handleScrollToIndexFailed = (info: {
+    index: number;
+    averageItemLength: number;
+  }) => {
+    flatListRef.current?.scrollToOffset({
+      offset: info.averageItemLength * info.index,
+      animated: false,
+    });
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToIndex({ index: info.index, animated: true });
+    });
+  };
 
   return (
     <View style={styles.readerContainer}>
-      <View style={styles.pageWrapper}>
-        {isDemo && demoData ? (
-          demoData.iscover ? (
-            <View style={styles.demoCoverImageContainer}>
-              <Image
-                source={DEMO_SHEET_IMAGE}
-                style={styles.demoCoverImage}
-                contentFit="contain"
-              />
-            </View>
-          ) : (
-            <View style={[styles.demoPageContent, { backgroundColor: demoData.bgColor }]}>
-              <View style={styles.demoPageHeader}>
-                <Text style={styles.demoPageBrand}>{demoData.brand}</Text>
-                <Text style={styles.demoPageHeadline}>{demoData.headline}</Text>
+      <View
+        style={styles.pageWrapper}
+        onLayout={(event) => setContainerWidth(event.nativeEvent.layout.width)}
+      >
+        {containerWidth > 0 ? (
+          <FlatList
+            ref={flatListRef}
+            data={posters}
+            horizontal
+            pagingEnabled
+            decelerationRate="fast"
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            initialScrollIndex={currentPage}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            onScrollToIndexFailed={handleScrollToIndexFailed}
+            getItemLayout={(_, index) => ({
+              length: containerWidth,
+              offset: containerWidth * index,
+              index,
+            })}
+            renderItem={({ item }) => (
+              <View style={[styles.pageSlide, { width: containerWidth }]}>
+                <MagazinePage poster={item} car={car} />
               </View>
-              <View style={styles.demoPageBody}>
-                {demoData.specs.map((spec, i) => (
-                  <View key={i} style={styles.demoSpecRow}>
-                    <Text style={styles.demoSpecLabel}>{spec.label}</Text>
-                    <Text style={styles.demoSpecValue}>{spec.value}</Text>
-                  </View>
-                ))}
-              </View>
-              <View style={styles.demoPageFooter}>
-                <Text style={styles.demoPageFooterText}>{demoData.footer}</Text>
-              </View>
-            </View>
-          )
-        ) : (
-          <PosterView
-            poster={currentPoster}
-            car={car}
-            overallNarration={car.narration}
+            )}
+            style={styles.pageList}
           />
-        )}
+        ) : null}
       </View>
+
+      <Text style={styles.swipeHint}>Swipe to browse pages</Text>
 
       <View style={styles.navigation}>
         <Pressable
@@ -590,6 +667,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 8,
     overflow: "hidden",
+  },
+  pageList: {
+    flex: 1,
+  },
+  pageSlide: {
+    flex: 1,
+    paddingHorizontal: 2,
+  },
+  swipeHint: {
+    color: COLORS.dim,
+    fontFamily: FONTS.mono,
+    fontSize: 10,
+    letterSpacing: 1.5,
+    textAlign: "center",
+    textTransform: "uppercase",
   },
 
   navigation: {
